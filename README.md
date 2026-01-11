@@ -9,6 +9,20 @@ Lightweight AI provider abstraction layer for edge deployment (Cloudflare Worker
 - 📦 **Lightweight**: Zero dependencies, uses native `fetch`
 - 🔄 **Unified API**: OpenAI-compatible interface across all providers
 - 🖼️ **Vision Ready**: Support for image/vision models
+- 🔐 **Deployable Worker**: Ready-to-deploy Cloudflare Worker with secure API key management
+
+## Quick Deploy (Cloudflare Worker)
+
+Want a secure AI proxy without exposing API keys? Use our deployable worker:
+
+```bash
+cd worker
+wrangler login
+wrangler secret put AZURE_API_KEY  # Store API key securely
+wrangler deploy
+```
+
+See [worker/README.md](./worker/README.md) for full deployment guide.
 
 ## Installation
 
