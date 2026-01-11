@@ -2,14 +2,6 @@ name = "edge-ai-gateway"
 main = "worker.ts"
 compatibility_date = "2024-01-01"
 
-# 启用 workers.dev 域名
-workers_dev = true
-
-# 自定义域名（需要域名在 Cloudflare DNS 管理）
-# routes = [
-#   { pattern = "edge-ai-gateway.duizhan.app", custom_domain = true }
-# ]
-
 # ============================================
 # 环境变量配置
 # ============================================
@@ -27,9 +19,9 @@ workers_dev = true
 AI_PROVIDER = "azure"
 
 # Azure OpenAI 配置
-AZURE_ENDPOINT = "https://herea-m1tvkrzc-eastus2.openai.azure.com"
+AZURE_ENDPOINT = "https://your-resource.openai.azure.com"
 AZURE_DEPLOYMENT = "gpt-4o"
-AZURE_API_VERSION = "2025-01-01-preview"
+AZURE_API_VERSION = "2024-02-15-preview"
 
 # OpenAI 配置（如果使用 OpenAI）
 # OPENAI_BASE_URL = "https://api.openai.com/v1"
