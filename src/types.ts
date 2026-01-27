@@ -2,7 +2,7 @@
  * Edge AI Gateway - Core Types
  */
 
-export type ProviderType = 'azure' | 'openai' | 'cloudflare' | 'custom';
+export type ProviderType = 'azure' | 'azure-foundry' | 'openai' | 'cloudflare' | 'custom';
 
 export interface Message {
   role: 'system' | 'user' | 'assistant';
@@ -63,6 +63,13 @@ export interface AzureConfig extends ProviderConfig {
   apiVersion?: string;
 }
 
+export interface AzureFoundryConfig extends ProviderConfig {
+  type: 'azure-foundry';
+  endpoint: string;
+  apiKey: string;
+  model?: string;
+}
+
 export interface OpenAIConfig extends ProviderConfig {
   type: 'openai';
   apiKey: string;
@@ -83,7 +90,7 @@ export interface CustomConfig extends ProviderConfig {
   headers?: Record<string, string>;
 }
 
-export type AnyProviderConfig = AzureConfig | OpenAIConfig | CloudflareConfig | CustomConfig;
+export type AnyProviderConfig = AzureConfig | AzureFoundryConfig | OpenAIConfig | CloudflareConfig | CustomConfig;
 
 export interface AIGatewayError extends Error {
   status?: number;

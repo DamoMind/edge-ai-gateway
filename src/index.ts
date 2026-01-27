@@ -14,6 +14,7 @@ export type {
   Usage,
   ProviderConfig,
   AzureConfig,
+  AzureFoundryConfig,
   OpenAIConfig,
   CloudflareConfig,
   CustomConfig,
@@ -26,6 +27,7 @@ export {
   AIProvider,
   BaseProvider,
   AzureProvider,
+  AzureFoundryProvider,
   OpenAIProvider,
   CloudflareProvider,
 } from './providers';
@@ -34,6 +36,7 @@ export {
 import type { AnyProviderConfig } from './types';
 import type { AIProvider } from './providers';
 import { AzureProvider } from './providers/azure';
+import { AzureFoundryProvider } from './providers/azure-foundry';
 import { OpenAIProvider } from './providers/openai';
 import { CloudflareProvider } from './providers/cloudflare';
 
@@ -44,6 +47,8 @@ export function createProvider(config: AnyProviderConfig): AIProvider {
   switch (config.type) {
     case 'azure':
       return new AzureProvider(config);
+    case 'azure-foundry':
+      return new AzureFoundryProvider(config);
     case 'openai':
       return new OpenAIProvider(config);
     case 'cloudflare':

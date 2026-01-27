@@ -9,19 +9,24 @@ compatibility_date = "2024-01-01"
 #
 # 设置敏感变量：
 #   wrangler secret put AZURE_API_KEY
+#   wrangler secret put AZURE_FOUNDRY_API_KEY
 #   wrangler secret put OPENAI_API_KEY
 #   wrangler secret put CF_API_TOKEN
 #   wrangler secret put CLIENT_API_KEY
 # ============================================
 
 [vars]
-# 选择 AI Provider: "azure" | "openai" | "cloudflare"
+# 选择 AI Provider: "azure" | "azure-foundry" | "openai" | "cloudflare"
 AI_PROVIDER = "azure"
 
-# Azure OpenAI 配置
-AZURE_ENDPOINT = "https://your-resource.openai.azure.com"
+# Azure OpenAI 配置（传统 Azure OpenAI Service）
+AZURE_ENDPOINT = "https://herea-m1tvkrzc-eastus2.openai.azure.com"
 AZURE_DEPLOYMENT = "gpt-4o"
 AZURE_API_VERSION = "2024-02-15-preview"
+
+# Azure AI Foundry 配置（新版 Azure AI 服务）
+# AZURE_FOUNDRY_ENDPOINT = "https://your-project.region.models.ai.azure.com"
+# AZURE_FOUNDRY_MODEL = "gpt-4o"
 
 # OpenAI 配置（如果使用 OpenAI）
 # OPENAI_BASE_URL = "https://api.openai.com/v1"
@@ -38,6 +43,6 @@ AZURE_API_VERSION = "2024-02-15-preview"
 # ============================================
 # [env.production]
 # [env.production.vars]
-# AI_PROVIDER = "azure"
-# AZURE_ENDPOINT = "https://prod-resource.openai.azure.com"
-# AZURE_DEPLOYMENT = "gpt-4o"
+# AI_PROVIDER = "azure-foundry"
+# AZURE_FOUNDRY_ENDPOINT = "https://prod-project.region.models.ai.azure.com"
+# AZURE_FOUNDRY_MODEL = "gpt-4o"

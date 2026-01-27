@@ -5,17 +5,22 @@
  * 支持 Azure OpenAI、OpenAI、Cloudflare AI
  */
 
-import { createProvider, type ProviderConfig } from '../src';
+import { createProvider, AzureProvider, AzureFoundryProvider, type ProviderConfig } from '../src';
 
 export interface Env {
   // 通用配置
-  AI_PROVIDER: 'azure' | 'openai' | 'cloudflare';
+  AI_PROVIDER: 'azure' | 'azure-foundry' | 'openai' | 'cloudflare';
 
   // Azure OpenAI
   AZURE_ENDPOINT?: string;
   AZURE_API_KEY?: string;
   AZURE_DEPLOYMENT?: string;
   AZURE_API_VERSION?: string;
+
+  // Azure AI Foundry
+  AZURE_FOUNDRY_ENDPOINT?: string;
+  AZURE_FOUNDRY_API_KEY?: string;
+  AZURE_FOUNDRY_MODEL?: string;
 
   // OpenAI
   OPENAI_API_KEY?: string;
@@ -59,6 +64,14 @@ function createProviderConfig(env: Env): ProviderConfig {
         apiVersion: env.AZURE_API_VERSION || '2024-02-15-preview',
       };
 
+    case 'azure-foundry':
+      return {
+        type: 'azure-foundry',
+        endpoint: env.AZURE_FOUNDRY_ENDPOINT || '',
+        apiKey: env.AZURE_FOUNDRY_API_KEY || '',
+        model: env.AZURE_FOUNDRY_MODEL || 'gpt-4o',
+      };
+
     case 'openai':
       return {
         type: 'openai',
@@ -99,7 +112,11 @@ export default {
     }
 
     // 验证客户端 API Key（如果配置了）
-    if (env.CLIENT_API_KEY) {
+    // Service bindings bypass this check (internal requests have no origin)
+    const isServiceBinding = !request.headers.get('Origin') && 
+                             new URL(request.url).hostname === 'internal';
+    
+    if (env.CLIENT_API_KEY && !isServiceBinding) {
       const authHeader = request.headers.get('Authorization');
       if (authHeader !== `Bearer ${env.CLIENT_API_KEY}`) {
         return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -127,6 +144,21 @@ export default {
       // 创建 Provider 并调用
       const config = createProviderConfig(env);
       const provider = createProvider(config);
+
+      // 处理流式响应（Azure 和 Azure Foundry 支持）
+      if (body.stream && (provider instanceof AzureProvider || provider instanceof AzureFoundryProvider)) {
+        const stream = await provider.chatStream(body);
+        return new Response(stream, {
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          },
+        });
+      }
+
+      // 非流式响应
       const response = await provider.chat(body);
 
       return new Response(JSON.stringify(response), {
