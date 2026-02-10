@@ -13,20 +13,29 @@ compatibility_date = "2024-01-01"
 #   wrangler secret put OPENAI_API_KEY
 #   wrangler secret put CF_API_TOKEN
 #   wrangler secret put CLIENT_API_KEY
+#   wrangler secret put GCP_SERVICE_ACCOUNT_JSON
+#   wrangler secret put GEMINI_API_KEY
 # ============================================
 
 [vars]
-# 选择 AI Provider: "azure" | "azure-foundry" | "openai" | "cloudflare"
-AI_PROVIDER = "azure"
+# 选择 AI Provider: "azure" | "azure-foundry" | "openai" | "cloudflare" | "vertex"
+AI_PROVIDER = "azure-foundry"
+
+# Required for querying Analytics Engine SQL API from within the Worker
+CF_ACCOUNT_ID = "a1ccbc30ed0501ad6788afd7757140a5"
 
 # Azure OpenAI 配置（传统 Azure OpenAI Service）
-AZURE_ENDPOINT = "https://herea-m1tvkrzc-eastus2.openai.azure.com"
-AZURE_DEPLOYMENT = "gpt-4o"
-AZURE_API_VERSION = "2024-02-15-preview"
+# AZURE_ENDPOINT = "https://herea-m1tvkrzc-eastus2.openai.azure.com"
+# AZURE_DEPLOYMENT = "gpt-4o"
+# AZURE_API_VERSION = "2024-02-15-preview"
 
 # Azure AI Foundry 配置（新版 Azure AI 服务）
-# AZURE_FOUNDRY_ENDPOINT = "https://your-project.region.models.ai.azure.com"
-# AZURE_FOUNDRY_MODEL = "gpt-4o"
+AZURE_FOUNDRY_ENDPOINT = "https://herea-m1tvkrzc-eastus2.services.ai.azure.com"
+AZURE_FOUNDRY_MODEL = "gpt-4o"  # 默认模型，可在请求中覆盖
+
+# Azure TTS 配置（cognitiveservices endpoint）
+AZURE_TTS_ENDPOINT = "https://herea-m1tvkrzc-eastus2.cognitiveservices.azure.com"
+AZURE_TTS_API_VERSION = "2025-03-01-preview"
 
 # OpenAI 配置（如果使用 OpenAI）
 # OPENAI_BASE_URL = "https://api.openai.com/v1"
@@ -35,10 +44,41 @@ AZURE_API_VERSION = "2024-02-15-preview"
 # CF_ACCOUNT_ID = "your-account-id"
 # CF_MODEL = "@cf/meta/llama-3.1-8b-instruct"
 
+# Google Vertex AI 配置 (使用 GCP 积分)
+GCP_PROJECT_ID = "gen-lang-client-0148167359"
+GCP_REGION = "us-central1"
+VERTEX_DEFAULT_MODEL = "gemini-2.0-flash"
+
 # 可选：限制允许的域名（逗号分隔）
 # ALLOWED_ORIGINS = "https://example.com,chrome-extension://xxx"
 
 # ============================================
+# Service Binding 使用说明
+# ============================================
+# 其他 Worker 可以通过 Service Binding 直接调用，无需 API Key
+# 
+# 在调用方 Worker 的 wrangler.toml 中添加：
+# [[services]]
+# binding = "AI_GATEWAY"
+# service = "edge-ai-gateway"
+#
+# 调用方代码示例：
+# const response = await env.AI_GATEWAY.fetch(
+#   new Request('https://internal/v1/chat/completions', {
+#     method: 'POST',
+#     headers: { 'Content-Type': 'application/json' },
+#     body: JSON.stringify({ model: 'gpt-4o', messages: [...] })
+#   })
+# );
+#
+# ============================================
+# ============================================
+# Analytics Engine (metrics)
+# ============================================
+[[analytics_engine_datasets]]
+binding = "AE"
+dataset = "edge_ai_gateway_usage"
+
 # 生产环境配置示例
 # ============================================
 # [env.production]

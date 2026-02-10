@@ -44,9 +44,9 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "tsup": "^8.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "wrangler": "^4.63.0"
   },
-  "peerDependencies": {},
   "engines": {
     "node": ">=18.0.0"
   }
