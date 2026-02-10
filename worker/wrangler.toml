@@ -22,7 +22,7 @@ compatibility_date = "2024-01-01"
 AI_PROVIDER = "azure-foundry"
 
 # Required for querying Analytics Engine SQL API from within the Worker
-CF_ACCOUNT_ID = "a1ccbc30ed0501ad6788afd7757140a5"
+# CF_ACCOUNT_ID = "<your_cloudflare_account_id>"
 
 # Azure OpenAI 配置（传统 Azure OpenAI Service）
 # AZURE_ENDPOINT = "https://herea-m1tvkrzc-eastus2.openai.azure.com"
@@ -30,11 +30,11 @@ CF_ACCOUNT_ID = "a1ccbc30ed0501ad6788afd7757140a5"
 # AZURE_API_VERSION = "2024-02-15-preview"
 
 # Azure AI Foundry 配置（新版 Azure AI 服务）
-AZURE_FOUNDRY_ENDPOINT = "https://herea-m1tvkrzc-eastus2.services.ai.azure.com"
+# AZURE_FOUNDRY_ENDPOINT = "https://<your-foundry-endpoint>.services.ai.azure.com"
 AZURE_FOUNDRY_MODEL = "gpt-4o"  # 默认模型，可在请求中覆盖
 
 # Azure TTS 配置（cognitiveservices endpoint）
-AZURE_TTS_ENDPOINT = "https://herea-m1tvkrzc-eastus2.cognitiveservices.azure.com"
+# AZURE_TTS_ENDPOINT = "https://<your-region>.cognitiveservices.azure.com"
 AZURE_TTS_API_VERSION = "2025-03-01-preview"
 
 # OpenAI 配置（如果使用 OpenAI）
@@ -45,9 +45,9 @@ AZURE_TTS_API_VERSION = "2025-03-01-preview"
 # CF_MODEL = "@cf/meta/llama-3.1-8b-instruct"
 
 # Google Vertex AI 配置 (使用 GCP 积分)
-GCP_PROJECT_ID = "gen-lang-client-0148167359"
-GCP_REGION = "us-central1"
-VERTEX_DEFAULT_MODEL = "gemini-2.0-flash"
+# GCP_PROJECT_ID = "your-project-id"
+# GCP_REGION = "us-central1"
+# VERTEX_DEFAULT_MODEL = "gemini-2.0-flash"
 
 # 可选：限制允许的域名（逗号分隔）
 # ALLOWED_ORIGINS = "https://example.com,chrome-extension://xxx"
