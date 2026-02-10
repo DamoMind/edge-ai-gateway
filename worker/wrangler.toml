@@ -25,7 +25,7 @@ AI_PROVIDER = "azure-foundry"
 # CF_ACCOUNT_ID = "<your_cloudflare_account_id>"
 
 # Azure OpenAI 配置（传统 Azure OpenAI Service）
-# AZURE_ENDPOINT = "https://herea-m1tvkrzc-eastus2.openai.azure.com"
+# AZURE_ENDPOINT = "https://<your-azure-openai-endpoint>.openai.azure.com"
 # AZURE_DEPLOYMENT = "gpt-4o"
 # AZURE_API_VERSION = "2024-02-15-preview"
 
