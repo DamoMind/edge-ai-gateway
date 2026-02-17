@@ -490,17 +490,69 @@ async function handleEmbeddings(request: Request, env: Env, corsHeaders: Headers
 /**
  * Validate chat completion request body
  */
-function validateChatRequest(body: unknown): body is ChatCompletionRequest {
-  if (!body || typeof body !== 'object') return false;
+function normalizeChatBody(body: unknown): ChatCompletionRequest | null {
+  if (!body || typeof body !== 'object') return null;
   const req = body as Record<string, unknown>;
-  
-  if (!Array.isArray(req.messages) || req.messages.length === 0) return false;
-  
-  return req.messages.every((msg: unknown) => {
-    if (!msg || typeof msg !== 'object') return false;
-    const m = msg as Record<string, unknown>;
-    return typeof m.role === 'string' && (typeof m.content === 'string' || Array.isArray(m.content));
-  });
+
+  if (Array.isArray(req.messages) && req.messages.length > 0) {
+    const valid = req.messages.every((msg: unknown) => {
+      if (!msg || typeof msg !== 'object') return false;
+      const m = msg as Record<string, unknown>;
+      return typeof m.role === 'string' && 'content' in m;
+    });
+    return valid ? (req as ChatCompletionRequest) : null;
+  }
+
+  let messages: ChatCompletionRequest['messages'] | undefined;
+  let text: string | undefined;
+
+  if (typeof req.prompt === 'string') {
+    text = req.prompt;
+  } else if (Array.isArray(req.prompt) && req.prompt.every(p => typeof p === 'string')) {
+    text = (req.prompt as string[]).join('\n');
+  }
+
+  if (!text) {
+    if (typeof req.input === 'string') {
+      text = req.input;
+    } else if (Array.isArray(req.input)) {
+      const arr = req.input as unknown[];
+      if (arr.every(p => typeof p === 'string')) {
+        text = (arr as string[]).join('\n');
+      } else if (arr.every(p => p && typeof p === 'object' && typeof (p as any).role === 'string')) {
+        messages = (arr as Array<{ role: string; content: string | unknown[] }>).map(m => ({
+          role: m.role,
+          content: (m as any).content ?? '',
+        }));
+      }
+    }
+  }
+
+  if (!messages && text) {
+    messages = [{ role: 'user', content: text }];
+  }
+
+  if (!messages || messages.length === 0) return null;
+
+  const normalized: ChatCompletionRequest = {
+    model: typeof req.model === 'string' ? req.model : undefined,
+    messages,
+    stream: req.stream === true,
+  } as ChatCompletionRequest;
+
+  if (typeof req.max_tokens === 'number') normalized.max_tokens = req.max_tokens;
+  if (typeof req.temperature === 'number') normalized.temperature = req.temperature;
+  if (typeof req.top_p === 'number') normalized.top_p = req.top_p;
+  if (typeof req.frequency_penalty === 'number') normalized.frequency_penalty = req.frequency_penalty;
+  if (typeof req.presence_penalty === 'number') normalized.presence_penalty = req.presence_penalty;
+  if (Array.isArray(req.stop)) normalized.stop = req.stop as string[];
+  if (typeof req.user === 'string') normalized.user = req.user;
+
+  return normalized;
+}
+
+function validateChatRequest(body: unknown): body is ChatCompletionRequest {
+  return normalizeChatBody(body) !== null;
 }
 
 /**
@@ -1181,14 +1233,14 @@ async function handleChat(
   }
 
   const requestedModel = safeParseChatRequestModel(body);
-
-  if (!validateChatRequest(body)) {
+  const chatBody = normalizeChatBody(body);
+  if (!chatBody) {
     return errorResponse('Invalid request: messages array is required', 400, corsHeaders);
   }
 
   // Check for model prefix routing (e.g., "gemini/gemini-2.0-flash" or "azure/gpt-4o")
-  const chatBody = body as ChatCompletionRequest;
   const { provider: prefixProvider, model: actualModel } = parseModelPrefix(chatBody.model);
+  const modelForRouting = actualModel || chatBody.model || '';
   
   // Handle Gemini/Vertex direct calls
   if (prefixProvider === 'gemini-direct') {
@@ -1264,6 +1316,13 @@ async function handleChat(
     const msg = configError instanceof Error ? configError.message : 'Config error';
     return errorResponse(`Provider config error: ${msg}`, 500, corsHeaders);
   }
+
+  // Responses-only models (e.g. Codex) do not support streaming on Azure Foundry.
+  // If a client requests streaming, we'll emulate SSE from a non-stream response.
+  const emulateStream = chatBody.stream === true && modelForRouting.toLowerCase().includes('codex');
+  if (emulateStream) {
+    chatBody.stream = false;
+  }
   
   let provider;
   try {
@@ -1315,6 +1374,34 @@ async function handleChat(
       status: 200,
       ts: Date.now(),
     });
+
+    if (emulateStream) {
+      const chunk = {
+        id: response.id || `chatcmpl-${Date.now()}`,
+        object: 'chat.completion.chunk',
+        created: Math.floor(Date.now() / 1000),
+        model: finalModel,
+        choices: [
+          {
+            index: 0,
+            delta: {
+              role: 'assistant',
+              content: response.choices?.[0]?.message?.content || '',
+            },
+            finish_reason: 'stop',
+          },
+        ],
+      };
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\\n\\n`));
+          controller.enqueue(encoder.encode('data: [DONE]\\n\\n'));
+          controller.close();
+        },
+      });
+      return streamResponse(stream, corsHeaders);
+    }
 
     return jsonResponse(response, corsHeaders);
   } catch (err) {
