@@ -6,7 +6,7 @@
  */
 
 /** Supported AI provider types */
-export type ProviderType = 'azure' | 'azure-foundry' | 'openai' | 'cloudflare' | 'vertex' | 'custom';
+export type ProviderType = 'azure' | 'azure-foundry' | 'azure-responses' | 'openai' | 'cloudflare' | 'vertex' | 'custom';
 
 /** Supported message roles in chat completions */
 export type MessageRole = 'system' | 'user' | 'assistant' | 'tool';
@@ -138,7 +138,14 @@ export interface VertexConfig extends ProviderConfig {
   defaultModel?: string;
 }
 
-export type AnyProviderConfig = AzureConfig | AzureFoundryConfig | OpenAIConfig | CloudflareConfig | VertexConfig | CustomConfig;
+export interface AzureResponsesConfig extends ProviderConfig {
+  type: 'azure-responses';
+  endpoint: string;
+  apiKey: string;
+  apiVersion?: string;
+}
+
+export type AnyProviderConfig = AzureConfig | AzureFoundryConfig | AzureResponsesConfig | OpenAIConfig | CloudflareConfig | VertexConfig | CustomConfig;
 
 /**
  * Error codes for AI Gateway errors

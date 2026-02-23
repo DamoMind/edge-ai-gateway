@@ -26,7 +26,14 @@
     "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "check": "npm run typecheck && npm run lint",
+    "worker:dev": "cd worker && wrangler dev",
+    "worker:deploy": "cd worker && wrangler deploy",
+    "worker:tail": "cd worker && wrangler tail",
+    "clean": "rm -rf dist node_modules",
+    "format": "prettier --write 'src/**/*.ts' 'worker/**/*.ts'",
+    "version": "echo $npm_package_version"
   },
   "keywords": [
     "ai",
@@ -45,7 +52,7 @@
     "@types/node": "^20.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0",
-    "wrangler": "^4.63.0"
+    "wrangler": "^4.65.0"
   },
   "engines": {
     "node": ">=18.0.0"

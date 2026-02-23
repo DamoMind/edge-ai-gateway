@@ -50,6 +50,7 @@ export {
   BaseProvider,
   AzureProvider,
   AzureFoundryProvider,
+  AzureResponsesProvider,
   OpenAIProvider,
   CloudflareProvider,
   VertexProvider,
@@ -60,6 +61,7 @@ import type { AnyProviderConfig } from './types';
 import type { AIProvider } from './providers';
 import { AzureProvider } from './providers/azure';
 import { AzureFoundryProvider } from './providers/azure-foundry';
+import { AzureResponsesProvider } from './providers/azure-responses';
 import { OpenAIProvider } from './providers/openai';
 import { CloudflareProvider } from './providers/cloudflare';
 import { VertexProvider } from './providers/vertex';
@@ -73,6 +75,8 @@ export function createProvider(config: AnyProviderConfig): AIProvider {
       return new AzureProvider(config);
     case 'azure-foundry':
       return new AzureFoundryProvider(config);
+    case 'azure-responses':
+      return new AzureResponsesProvider(config as any);
     case 'openai':
       return new OpenAIProvider(config);
     case 'cloudflare':

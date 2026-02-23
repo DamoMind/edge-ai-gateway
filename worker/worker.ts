@@ -22,13 +22,15 @@ import {
   type UsageEvent,
 } from './metrics';
 
+import { handleAzureResponsesRoute } from './azure-responses';
+
 // ============================================================================
 // Types
 // ============================================================================
 
 export interface Env {
   // General config
-  AI_PROVIDER: 'azure' | 'azure-foundry' | 'openai' | 'cloudflare' | 'vertex';
+  AI_PROVIDER: 'azure' | 'azure-foundry' | 'azure-responses' | 'openai' | 'cloudflare' | 'vertex';
 
   // Metrics (Cloudflare Analytics Engine)
   AE?: AnalyticsEngineDataset;
@@ -217,6 +219,20 @@ function createProviderConfig(env: Env): AnyProviderConfig {
         endpoint: env.AZURE_FOUNDRY_ENDPOINT,
         apiKey: env.AZURE_FOUNDRY_API_KEY,
         model: env.AZURE_FOUNDRY_MODEL || 'gpt-4o',
+      };
+
+    case 'azure-responses':
+      if (!env.AZURE_ENDPOINT || !env.AZURE_API_KEY) {
+        throw new AIGatewayError('Azure endpoint and API key are required', {
+          status: 500,
+          code: AIGatewayErrorCode.CONFIG_ERROR,
+        });
+      }
+      return {
+        type: 'azure-responses',
+        endpoint: env.AZURE_ENDPOINT,
+        apiKey: env.AZURE_API_KEY,
+        apiVersion: env.AZURE_API_VERSION || '2025-03-01-preview',
       };
 
     case 'openai':
@@ -1553,6 +1569,10 @@ export default {
 
       if (path === '/v1/embeddings' || path.endsWith('/embeddings')) {
         return handleEmbeddings(request, env, corsHeaders);
+      }
+
+      if (path === '/v1/responses' || path.endsWith('/responses')) {
+        return handleAzureResponsesRoute(request, env, corsHeaders);
       }
 
       // Default: chat completion
