@@ -45,9 +45,9 @@ AZURE_TTS_API_VERSION = "2025-03-01-preview"
 # CF_MODEL = "@cf/meta/llama-3.1-8b-instruct"
 
 # Google Vertex AI 配置 (使用 GCP 积分)
-# GCP_PROJECT_ID = "your-project-id"
-# GCP_REGION = "us-central1"
-# VERTEX_DEFAULT_MODEL = "gemini-2.0-flash"
+GCP_PROJECT_ID = "gen-lang-client-0148167359"
+GCP_REGION = "us-central1"
+VERTEX_DEFAULT_MODEL = "gemini-2.5-flash"
 
 # 可选：限制允许的域名（逗号分隔）
 # ALLOWED_ORIGINS = "https://example.com,chrome-extension://xxx"
