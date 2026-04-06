@@ -1395,7 +1395,14 @@ async function handleChat(
   }
 
   // Check for model prefix routing (e.g., "gemini/gemini-2.0-flash" or "azure/gpt-4o")
-  const { provider: prefixProvider, model: actualModel } = parseModelPrefix(chatBody.model);
+  const { provider: prefixProvider, model: rawModel } = parseModelPrefix(chatBody.model);
+  
+  // Model alias mapping (friendly names → actual Vertex model IDs)
+  const modelAliases: Record<string, string> = {
+    'gemini-3.1-pro': 'gemini-3.1-pro-preview',
+    'gemini-2.5-pro': 'gemini-2.5-pro-preview-05-06',
+  };
+  const actualModel = modelAliases[rawModel || ''] || rawModel;
   const modelForRouting = actualModel || chatBody.model || '';
   
   // Handle Gemini/Vertex direct calls
