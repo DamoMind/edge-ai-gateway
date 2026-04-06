@@ -1106,7 +1106,9 @@ async function callVertexAnthropic(
   region: string,
   serviceAccountJson: string,
   corsHeaders: HeadersInit,
-  maxTokens?: number
+  maxTokens?: number,
+  tools?: any[],
+  toolChoice?: any
 ): Promise<Response> {
   try {
     // Get OAuth2 access token
@@ -1134,6 +1136,25 @@ async function callVertexAnthropic(
         ? systemMsg.content 
         : JSON.stringify(systemMsg.content);
     }
+
+    // Pass through tools if provided (convert OpenAI format → Anthropic format)
+    if (tools && tools.length > 0) {
+      body.tools = tools.map((t: any) => {
+        if (t.type === 'function') {
+          return {
+            name: t.function.name,
+            description: t.function.description || '',
+            input_schema: t.function.parameters || { type: 'object', properties: {} },
+          };
+        }
+        return t;
+      });
+      if (toolChoice === 'auto') {
+        body.tool_choice = { type: 'auto' };
+      } else if (toolChoice === 'none') {
+        body.tool_choice = { type: 'none' };
+      }
+    }
     
     // Vertex AI Anthropic endpoint
     // For 'global' region: https://aiplatform.googleapis.com/v1/projects/{PROJECT}/locations/global/publishers/anthropic/models/{MODEL}:rawPredict
@@ -1157,13 +1178,31 @@ async function callVertexAnthropic(
     }
 
     const anthropicResponse = await response.json() as {
-      content?: { type: string; text: string }[];
+      content?: { type: string; text?: string; id?: string; name?: string; input?: any }[];
       usage?: { input_tokens: number; output_tokens: number };
       stop_reason?: string;
     };
 
     // Convert to OpenAI format
-    const content = anthropicResponse.content?.[0]?.text || '';
+    const textBlocks = (anthropicResponse.content || []).filter(b => b.type === 'text');
+    const toolBlocks = (anthropicResponse.content || []).filter(b => b.type === 'tool_use');
+    const content = textBlocks.map(b => b.text || '').join('');
+
+    const messageObj: any = { role: 'assistant', content: content || null };
+    if (toolBlocks.length > 0) {
+      messageObj.tool_calls = toolBlocks.map((tb, i) => ({
+        id: tb.id || `call_${Date.now()}_${i}`,
+        type: 'function',
+        function: {
+          name: tb.name,
+          arguments: JSON.stringify(tb.input || {}),
+        },
+      }));
+    }
+
+    const finishReason = anthropicResponse.stop_reason === 'tool_use' ? 'tool_calls'
+      : anthropicResponse.stop_reason === 'end_turn' ? 'stop' : 'stop';
+
     const openaiResponse = {
       id: `chatcmpl-${Date.now()}`,
       object: 'chat.completion',
@@ -1171,8 +1210,8 @@ async function callVertexAnthropic(
       model,
       choices: [{
         index: 0,
-        message: { role: 'assistant', content },
-        finish_reason: anthropicResponse.stop_reason === 'end_turn' ? 'stop' : 'stop',
+        message: messageObj,
+        finish_reason: finishReason,
       }],
       usage: anthropicResponse.usage ? {
         prompt_tokens: anthropicResponse.usage.input_tokens,
@@ -1345,7 +1384,9 @@ async function handleChat(
       'global', // User's working code uses region="global"
       env.GCP_SERVICE_ACCOUNT_JSON,
       corsHeaders,
-      chatBody.max_tokens
+      chatBody.max_tokens,
+      chatBody.tools,
+      chatBody.tool_choice
     );
   }
   
