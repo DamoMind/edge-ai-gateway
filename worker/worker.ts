@@ -263,20 +263,12 @@ function createProviderConfig(env: Env): AnyProviderConfig {
         model: env.CF_MODEL,
       };
 
-    case 'vertex': {
-      const hasProject = Boolean(env.GCP_PROJECT_ID && env.GCP_PROJECT_ID.trim());
-      const hasVertexApiKey = Boolean(env.VERTEX_API_KEY && env.VERTEX_API_KEY.trim());
-      const hasServiceAccount = Boolean(env.GCP_SERVICE_ACCOUNT_JSON && env.GCP_SERVICE_ACCOUNT_JSON.trim());
-      const hasGeminiApiKey = Boolean(env.GEMINI_API_KEY && env.GEMINI_API_KEY.trim());
-
-      if (!((hasProject && (hasVertexApiKey || hasServiceAccount)) || hasGeminiApiKey)) {
-        throw new AIGatewayError(
-          'Vertex provider misconfigured. Required one of: (1) GCP_PROJECT_ID + VERTEX_API_KEY, (2) GCP_PROJECT_ID + GCP_SERVICE_ACCOUNT_JSON, or (3) GEMINI_API_KEY',
-          {
-            status: 500,
-            code: AIGatewayErrorCode.CONFIG_ERROR,
-          }
-        );
+    case 'vertex':
+      if (!env.GCP_PROJECT_ID && !env.GEMINI_API_KEY) {
+        throw new AIGatewayError('GCP project ID or Gemini API key is required', {
+          status: 500,
+          code: AIGatewayErrorCode.CONFIG_ERROR,
+        });
       }
       return {
         type: 'vertex',
@@ -286,7 +278,6 @@ function createProviderConfig(env: Env): AnyProviderConfig {
         geminiApiKey: env.GEMINI_API_KEY,
         defaultModel: env.VERTEX_DEFAULT_MODEL || 'gemini-2.0-flash',
       };
-    }
 
     default:
       throw new AIGatewayError(`Unknown provider: ${env.AI_PROVIDER}`, {
@@ -582,27 +573,24 @@ function validateChatRequest(body: unknown): body is ChatCompletionRequest {
 
 /**
  * Parse model prefix and return provider type + actual model name
- * Supports: gemini/model, gemini-direct/model, vertex/model, azure/model, foundry/model, azure-foundry/model, openai/model, vertex-claude/model, vertex-anthropic/model, anthropic/model
+ * Supports: gemini/model, vertex/model, azure/model, foundry/model, openai/model
  */
 function parseModelPrefix(model: string | undefined): { provider: string | null; model: string } {
   if (!model) return { provider: null, model: '' };
   
-  const prefixMatch = model.match(/^(gemini|gemini-direct|vertex|azure|foundry|azure-foundry|openai|cloudflare|vertex-claude|vertex-anthropic|anthropic)\/(.*)/i);
+  const prefixMatch = model.match(/^(gemini|vertex|azure|foundry|openai|cloudflare|vertex-claude|anthropic)\/(.*)/i);
   if (prefixMatch) {
     const prefix = prefixMatch[1].toLowerCase();
     const actualModel = prefixMatch[2];
     // Map prefixes to provider types
     const providerMap: Record<string, string> = {
-      'gemini': 'gemini-direct', // Alias to direct Gemini/Vertex path
-      'gemini-direct': 'gemini-direct',
+      'gemini': 'gemini-direct', // Use direct Gemini API call
       'vertex': 'gemini-direct',
       'azure': 'azure-foundry',
       'foundry': 'azure-foundry',
-      'azure-foundry': 'azure-foundry',
       'openai': 'openai',
       'cloudflare': 'cloudflare',
       'vertex-claude': 'vertex-anthropic', // Anthropic on Vertex AI
-      'vertex-anthropic': 'vertex-anthropic',
       'anthropic': 'vertex-anthropic',
     };
     return { provider: providerMap[prefix] || null, model: actualModel };
@@ -710,10 +698,38 @@ async function getGoogleAccessToken(serviceAccountJson: string): Promise<string>
 function toGeminiMessages(messages: Array<{ role: string; content: string | unknown[] }>) {
   return messages
     .filter(m => m.role !== 'system')
-    .map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }]
-    }));
+    .map(m => {
+      // Assistant message with tool_calls → model with functionCall parts
+      if (m.role === 'assistant' && (m as any).tool_calls) {
+        const parts: any[] = [];
+        if (m.content) parts.push({ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) });
+        for (const tc of (m as any).tool_calls) {
+          parts.push({
+            functionCall: {
+              name: tc.function?.name,
+              args: JSON.parse(tc.function?.arguments || '{}'),
+            },
+          });
+        }
+        return { role: 'model', parts };
+      }
+      // Tool result → user with functionResponse part
+      if (m.role === 'tool') {
+        return {
+          role: 'user',
+          parts: [{
+            functionResponse: {
+              name: (m as any).name || 'unknown',
+              response: { result: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) },
+            },
+          }],
+        };
+      }
+      return {
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }],
+      };
+    });
 }
 
 /** Call Vertex AI directly with Service Account auth */
@@ -724,7 +740,9 @@ async function callVertexAI(
   region: string,
   serviceAccountJson: string,
   corsHeaders: HeadersInit,
-  vertexApiKey?: string
+  vertexApiKey?: string,
+  tools?: any[],
+  toolChoice?: any
 ): Promise<Response> {
   try {
     const geminiMessages = toGeminiMessages(messages);
@@ -735,6 +753,30 @@ async function callVertexAI(
       body.systemInstruction = { 
         parts: [{ text: typeof systemMsg.content === 'string' ? systemMsg.content : JSON.stringify(systemMsg.content) }] 
       };
+    }
+
+    // Convert OpenAI tools to Gemini functionDeclarations
+    if (tools && tools.length > 0) {
+      const functionDeclarations = tools.map((t: any) => {
+        if (t.type === 'function') {
+          const params = t.function.parameters || { type: 'object', properties: {} };
+          // Gemini doesn't support additionalProperties — strip it
+          const cleanParams = JSON.parse(JSON.stringify(params));
+          delete cleanParams.additionalProperties;
+          return {
+            name: t.function.name,
+            description: t.function.description || '',
+            parameters: cleanParams,
+          };
+        }
+        return t;
+      });
+      body.tools = [{ functionDeclarations }];
+      if (toolChoice === 'auto') {
+        body.toolConfig = { functionCallingConfig: { mode: 'AUTO' } };
+      } else if (toolChoice === 'none') {
+        body.toolConfig = { functionCallingConfig: { mode: 'NONE' } };
+      }
     }
 
     // Use API Key if available, otherwise use OAuth2
@@ -767,12 +809,30 @@ async function callVertexAI(
     }
 
     const geminiResponse = await response.json() as {
-      candidates?: { content: { parts: { text: string }[] } }[];
+      candidates?: { content: { parts: any[] }; finishReason?: string }[];
       usageMetadata?: { promptTokenCount: number; candidatesTokenCount: number; totalTokenCount: number };
     };
 
     // Convert to OpenAI format
-    const content = geminiResponse.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const parts = geminiResponse.candidates?.[0]?.content?.parts || [];
+    const textParts = parts.filter((p: any) => p.text);
+    const fcParts = parts.filter((p: any) => p.functionCall);
+    const content = textParts.map((p: any) => p.text).join('') || '';
+
+    const messageObj: any = { role: 'assistant', content: content || null };
+    if (fcParts.length > 0) {
+      messageObj.tool_calls = fcParts.map((p: any, i: number) => ({
+        id: `call_${Date.now()}_${i}`,
+        type: 'function',
+        function: {
+          name: p.functionCall.name,
+          arguments: JSON.stringify(p.functionCall.args || {}),
+        },
+      }));
+    }
+
+    const finishReason = fcParts.length > 0 ? 'tool_calls' : 'stop';
+
     const openaiResponse = {
       id: `chatcmpl-${Date.now()}`,
       object: 'chat.completion',
@@ -780,8 +840,8 @@ async function callVertexAI(
       model,
       choices: [{
         index: 0,
-        message: { role: 'assistant', content },
-        finish_reason: 'stop',
+        message: messageObj,
+        finish_reason: finishReason,
       }],
       usage: geminiResponse.usageMetadata ? {
         prompt_tokens: geminiResponse.usageMetadata.promptTokenCount,
@@ -1216,6 +1276,7 @@ async function callVertexAnthropic(
     const toolBlocks = (anthropicResponse.content || []).filter(b => b.type === 'tool_use');
     const content = textBlocks.map(b => b.text || '').join('');
 
+    // Build OpenAI-compatible message
     const messageObj: any = { role: 'assistant', content: content || null };
     if (toolBlocks.length > 0) {
       messageObj.tool_calls = toolBlocks.map((tb, i) => ({
@@ -1260,12 +1321,8 @@ async function callVertexAnthropic(
  */
 function createProviderConfigForType(providerType: string, env: Env): AnyProviderConfig | null {
   switch (providerType) {
-    case 'vertex': {
-      const hasProject = Boolean(env.GCP_PROJECT_ID && env.GCP_PROJECT_ID.trim());
-      const hasVertexApiKey = Boolean(env.VERTEX_API_KEY && env.VERTEX_API_KEY.trim());
-      const hasServiceAccount = Boolean(env.GCP_SERVICE_ACCOUNT_JSON && env.GCP_SERVICE_ACCOUNT_JSON.trim());
-      const hasGeminiApiKey = Boolean(env.GEMINI_API_KEY && env.GEMINI_API_KEY.trim());
-      if (!((hasProject && (hasVertexApiKey || hasServiceAccount)) || hasGeminiApiKey)) return null;
+    case 'vertex':
+      if (!env.GCP_PROJECT_ID && !env.GEMINI_API_KEY) return null;
       return {
         type: 'vertex',
         projectId: env.GCP_PROJECT_ID || '',
@@ -1274,7 +1331,6 @@ function createProviderConfigForType(providerType: string, env: Env): AnyProvide
         geminiApiKey: env.GEMINI_API_KEY,
         defaultModel: env.VERTEX_DEFAULT_MODEL || 'gemini-2.0-flash',
       };
-    }
     case 'azure-foundry':
       if (!env.AZURE_FOUNDRY_ENDPOINT || !env.AZURE_FOUNDRY_API_KEY) return null;
       return {
@@ -1345,58 +1401,40 @@ async function handleChat(
   // Handle Gemini/Vertex direct calls
   if (prefixProvider === 'gemini-direct') {
     const isStreaming = chatBody.stream === true;
-    const hasProject = Boolean(env.GCP_PROJECT_ID && env.GCP_PROJECT_ID.trim());
-    const hasVertexApiKey = Boolean(env.VERTEX_API_KEY && env.VERTEX_API_KEY.trim());
-    const hasServiceAccount = Boolean(env.GCP_SERVICE_ACCOUNT_JSON && env.GCP_SERVICE_ACCOUNT_JSON.trim());
-    const hasGeminiApiKey = Boolean(env.GEMINI_API_KEY && env.GEMINI_API_KEY.trim());
-
-    // Try Vertex first when sufficiently configured.
-    // Safe fallback: if Vertex fails and GEMINI_API_KEY exists, retry via Gemini direct API.
-    if (hasProject && (hasVertexApiKey || hasServiceAccount)) {
-      const vertexResp = isStreaming
-        ? await callVertexAIStreaming(
-            actualModel,
-            chatBody.messages,
-            env.GCP_PROJECT_ID!,
-            env.GCP_REGION || 'us-central1',
-            env.GCP_SERVICE_ACCOUNT_JSON || '',
-            corsHeaders,
-            env.VERTEX_API_KEY
-          )
-        : await callVertexAI(
-            actualModel,
-            chatBody.messages,
-            env.GCP_PROJECT_ID!,
-            env.GCP_REGION || 'us-central1',
-            env.GCP_SERVICE_ACCOUNT_JSON || '',
-            corsHeaders,
-            env.VERTEX_API_KEY
-          );
-
-      if (vertexResp.ok || !hasGeminiApiKey) {
-        return vertexResp;
-      }
-
-      // Vertex failed and Gemini key exists: best-effort fallback to keep route available.
+    
+    // Prefer Vertex AI (uses GCP credits) with API Key or Service Account
+    if (env.GCP_PROJECT_ID && (env.VERTEX_API_KEY || env.GCP_SERVICE_ACCOUNT_JSON)) {
       if (isStreaming) {
-        return callGeminiAPIStreaming(actualModel, chatBody.messages, env.GEMINI_API_KEY!, corsHeaders);
+        return callVertexAIStreaming(
+          actualModel, 
+          chatBody.messages, 
+          env.GCP_PROJECT_ID, 
+          env.GCP_REGION || 'us-central1',
+          env.GCP_SERVICE_ACCOUNT_JSON || '', 
+          corsHeaders,
+          env.VERTEX_API_KEY
+        );
       }
-      return callGeminiAPI(actualModel, chatBody.messages, env.GEMINI_API_KEY!, corsHeaders);
+      return callVertexAI(
+        actualModel, 
+        chatBody.messages, 
+        env.GCP_PROJECT_ID, 
+        env.GCP_REGION || 'us-central1',
+        env.GCP_SERVICE_ACCOUNT_JSON || '', 
+        corsHeaders,
+        env.VERTEX_API_KEY,
+        chatBody.tools,
+        chatBody.tool_choice
+      );
     }
-
-    // If Vertex isn't fully configured, but Gemini API key exists, use Gemini directly.
-    if (hasGeminiApiKey) {
+    // Fallback to Gemini API
+    if (env.GEMINI_API_KEY) {
       if (isStreaming) {
-        return callGeminiAPIStreaming(actualModel, chatBody.messages, env.GEMINI_API_KEY!, corsHeaders);
+        return callGeminiAPIStreaming(actualModel, chatBody.messages, env.GEMINI_API_KEY, corsHeaders);
       }
-      return callGeminiAPI(actualModel, chatBody.messages, env.GEMINI_API_KEY!, corsHeaders);
+      return callGeminiAPI(actualModel, chatBody.messages, env.GEMINI_API_KEY, corsHeaders);
     }
-
-    return errorResponse(
-      'gemini/ or vertex/ model requires one of: (1) GCP_PROJECT_ID + VERTEX_API_KEY, (2) GCP_PROJECT_ID + GCP_SERVICE_ACCOUNT_JSON, or (3) GEMINI_API_KEY',
-      400,
-      corsHeaders
-    );
+    return errorResponse('GCP_PROJECT_ID + (VERTEX_API_KEY or GCP_SERVICE_ACCOUNT_JSON) required for gemini/ prefix', 400, corsHeaders);
   }
   
   // Handle Anthropic on Vertex AI (Claude models via GCP)
