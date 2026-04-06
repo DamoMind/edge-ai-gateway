@@ -1118,11 +1118,39 @@ async function callVertexAnthropic(
     const systemMsg = messages.find(m => m.role === 'system');
     const chatMessages = messages.filter(m => m.role !== 'system');
     
-    // Convert to Anthropic Messages format
-    const anthropicMessages = chatMessages.map(m => ({
-      role: m.role === 'user' ? 'user' : 'assistant',
-      content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
-    }));
+    // Convert OpenAI messages to Anthropic Messages format
+    const anthropicMessages: any[] = [];
+    for (const m of chatMessages) {
+      if (m.role === 'assistant' && (m as any).tool_calls) {
+        // Assistant message with tool_calls → Anthropic tool_use content blocks
+        const content: any[] = [];
+        if (m.content) content.push({ type: 'text', text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) });
+        for (const tc of (m as any).tool_calls) {
+          content.push({
+            type: 'tool_use',
+            id: tc.id,
+            name: tc.function?.name,
+            input: JSON.parse(tc.function?.arguments || '{}'),
+          });
+        }
+        anthropicMessages.push({ role: 'assistant', content });
+      } else if (m.role === 'tool') {
+        // Tool result → Anthropic user message with tool_result content block
+        anthropicMessages.push({
+          role: 'user',
+          content: [{
+            type: 'tool_result',
+            tool_use_id: (m as any).tool_call_id,
+            content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+          }],
+        });
+      } else {
+        anthropicMessages.push({
+          role: m.role === 'user' ? 'user' : 'assistant',
+          content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+        });
+      }
+    }
     
     // Build request body (Anthropic Messages API format)
     const body: Record<string, unknown> = {
