@@ -725,6 +725,26 @@ function toGeminiMessages(messages: Array<{ role: string; content: string | unkn
           }],
         };
       }
+      // Handle multimodal content (images)
+      if (Array.isArray(m.content)) {
+        const parts: any[] = [];
+        for (const block of m.content as any[]) {
+          if (block.type === 'text') {
+            parts.push({ text: block.text });
+          } else if (block.type === 'image_url') {
+            const url = block.image_url?.url || '';
+            if (url.startsWith('data:')) {
+              const match = url.match(/^data:(image\/\w+);base64,(.+)$/);
+              if (match) {
+                parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
+              }
+            } else {
+              parts.push({ fileData: { mimeType: 'image/jpeg', fileUri: url } });
+            }
+          }
+        }
+        return { role: m.role === 'assistant' ? 'model' : 'user', parts };
+      }
       return {
         role: m.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }],
@@ -1205,10 +1225,48 @@ async function callVertexAnthropic(
           }],
         });
       } else {
-        anthropicMessages.push({
-          role: m.role === 'user' ? 'user' : 'assistant',
-          content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
-        });
+        // Handle multimodal content (images)
+        if (Array.isArray(m.content)) {
+          const parts: any[] = [];
+          for (const block of m.content as any[]) {
+            if (block.type === 'text') {
+              parts.push({ type: 'text', text: block.text });
+            } else if (block.type === 'image_url') {
+              const url = block.image_url?.url || '';
+              if (url.startsWith('data:')) {
+                // Base64 data URI → Anthropic base64 image
+                const match = url.match(/^data:(image\/\w+);base64,(.+)$/);
+                if (match) {
+                  parts.push({ type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } });
+                }
+              } else {
+                // URL → download and convert to base64 (Vertex Anthropic doesn't support URL source)
+                try {
+                  const imgRes = await fetch(url);
+                  if (imgRes.ok) {
+                    const imgBuf = await imgRes.arrayBuffer();
+                    // Convert ArrayBuffer to base64 in chunks (avoid stack overflow on large images)
+                    const bytes = new Uint8Array(imgBuf);
+                    let b64 = '';
+                    const chunk = 8192;
+                    for (let i = 0; i < bytes.length; i += chunk) {
+                      b64 += String.fromCharCode(...bytes.subarray(i, i + chunk));
+                    }
+                    b64 = btoa(b64);
+                    const ct = imgRes.headers.get('content-type') || 'image/jpeg';
+                    parts.push({ type: 'image', source: { type: 'base64', media_type: ct, data: b64 } });
+                  }
+                } catch { /* skip image on fetch error */ }
+              }
+            }
+          }
+          anthropicMessages.push({ role: m.role === 'user' ? 'user' : 'assistant', content: parts });
+        } else {
+          anthropicMessages.push({
+            role: m.role === 'user' ? 'user' : 'assistant',
+            content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+          });
+        }
       }
     }
     
